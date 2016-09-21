@@ -1,0 +1,72 @@
+--Скрипт для поиска запросов v.2
+--07.04.2016	Добавлен поиск в джобах
+use i_collect
+	
+declare 
+	@txt varchar(4000) = '%insert%bla-bla-bla%'; --Здесь задаем ключевые слова для поиска нужного скрипта
+	
+--IF  object_id('tempdb..#query') is not null DROP TABLE #query
+select 
+	o.type_desc as typ,
+	o.name as name, 
+	sm.definition as query,
+	DB_ID() as id_db,
+	DB_NAME() as name_db,
+	NULL as last_execution,
+	o.create_date,
+	o.modify_date,
+	1 as id
+--into #query
+from 
+	sys.objects AS o
+	JOIN sys.sql_modules AS sm on o.object_id = sm.object_id
+where 
+	1=1
+	and PATINDEX( @txt , sm.definition) > 0	
+
+union all
+	
+select 
+	'Jobs' as typ,
+	'Job name: ' + j.name + ', Step: ' + CAST( js.step_id as varchar(10) ) + ', Step name: ' + js.step_name as name, 
+	js.command as query,
+	NULL as id_db,
+	js.database_name as name_db,
+	CAST( substring( CAST( js.last_run_date as varchar(100) ), 1, 4 ) + '-' 
+		+ substring( CAST( js.last_run_date as varchar(100) ), 5, 2 ) + '-' 
+		+ substring( CAST( js.last_run_date as varchar(100) ), 7, 2 )  + ' ' 
+		+ REVERSE( SUBSTRING( REVERSE( CAST( last_run_time as varchar(100) ) ), 5, 2 ) )  + ':' 
+		+ REVERSE( SUBSTRING( REVERSE( CAST( last_run_time as varchar(100) ) ), 3, 2 ) )  + ':' 
+		+ REVERSE( SUBSTRING( REVERSE( CAST( last_run_time as varchar(100) ) ), 1, 2 ) ) 
+			as datetime2(0) ) as last_execution,
+	--CAST( js.last_run_date as varchar(100) ) + ' ' + CAST( last_run_time as varchar(100) ) as last_execution,
+	j.date_created,
+	j.date_modified,
+	2 as id
+from 
+	msdb.dbo.sysjobsteps js
+	left join msdb.dbo.sysjobs j on js.job_id=j.job_id
+where 
+	1=1
+	and PATINDEX( @txt, js.command) > 0	
+		
+union all
+	
+select
+	'cached query plans',
+	'', 
+	st.text,
+	st.dbid,
+	DB_NAME(st.dbid),
+	qs.last_execution_time as last_execution,
+	qs.creation_time,
+	NULL,
+	3 as id
+from 
+	sys.dm_exec_query_stats qs
+	CROSS APPLY sys.dm_exec_sql_text (qs.sql_handle) st
+where 
+	1=1
+	and PATINDEX( @txt , st.text) > 0
+	and st.text not like '%Скрипт для поиска запросов%'
+order by id, o.type_desc, o.name, last_execution
